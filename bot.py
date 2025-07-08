@@ -45,14 +45,14 @@ class Faroswap:
         self.swap_count = 6  # Akan melakukan swap 2x (1x PHRS->WPHRS, 1x acak)
         self.phrs_swap_amount = 0.02
         self.wphrs_swap_amount = 0.01
-        self.usdc_swap_amount = 1.0
-        self.usdt_swap_amount = 1.0
+        self.usdc_swap_amount = 0.1
+        self.usdt_swap_amount = 0.1
         self.weth_swap_amount = 0.000001
         self.wbtc_swap_amount = 0.000001
 
         self.add_lp_count = 2  # Akan menambah likuiditas 2x
-        self.usdc_add_lp_amount = 1.0
-        self.usdt_add_lp_amount = 1.0
+        self.usdc_add_lp_amount = 0.1
+        self.usdt_add_lp_amount = 0.1
         
         self.min_delay = 10  # Detik
         self.max_delay = 25  # Detik
