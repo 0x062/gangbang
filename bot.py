@@ -42,7 +42,7 @@ class Faroswap:
         self.deposit_amount = 0.01
         self.withdraw_amount = 0.01
 
-        self.swap_count = 5  # Akan melakukan swap 2x (1x PHRS->WPHRS, 1x acak)
+        self.swap_count = 5  # << ANDA BISA UBAH NILAI INI
         self.phrs_swap_amount = 0.01
         self.wphrs_swap_amount = 0.01
         self.usdc_swap_amount = 0.01
@@ -50,12 +50,12 @@ class Faroswap:
         self.weth_swap_amount = 0.001
         self.wbtc_swap_amount = 0.0001
 
-        self.add_lp_count = 5  # Akan menambah likuiditas 2x
-        self.usdc_add_lp_amount = 0.01 # Jumlah kecil untuk testing
-        self.usdt_add_lp_amount = 0.01 # Jumlah kecil untuk testing
+        self.add_lp_count = 5
+        self.usdc_add_lp_amount = 0.01
+        self.usdt_add_lp_amount = 0.01
         
-        self.min_delay = 10  # Detik
-        self.max_delay = 25  # Detik
+        self.min_delay = 10
+        self.max_delay = 25
         # ============================
 
     def log(self, message):
@@ -172,13 +172,13 @@ class Faroswap:
                 if tx_hash:
                     self.log_transaction("Approve", tx_hash, block_number)
                     await self.print_timer()
-                    return True # Return success
+                    return True
                 else:
                     raise Exception("Approval transaction failed to get hash.")
-            return True # Already approved or approval succeeded
+            return True
         except Exception as e:
             self.log(f"{Fore.RED+Style.BRIGHT}Approving token failed: {e}{Style.RESET_ALL}")
-            return False # Return failure
+            return False
 
     async def perform_swap(self, account: str, address: str, from_token: str, to_token: str, amount: float):
         try:
@@ -188,18 +188,13 @@ class Faroswap:
             
             if from_token != self.PHRS_CONTRACT_ADDRESS:
                 if not await self.approving_token(account, address, self.MIXSWAP_ROUTER_ADDRESS, from_token, amount_to_wei):
-                    return None, None # Stop if approval fails
+                    return None, None
             
             dodo_route = await self.get_dodo_route(address, from_token, to_token, amount_to_wei)
             if not dodo_route or "data" not in dodo_route: return None, None
             
             route_data = dodo_route["data"]
-            tx_func = {
-                'to': self.MIXSWAP_ROUTER_ADDRESS,
-                'from': address,
-                'data': route_data.get('data'),
-                'value': int(route_data.get('value'))
-            }
+            tx_func = {'to': self.MIXSWAP_ROUTER_ADDRESS, 'from': address, 'data': route_data.get('data'), 'value': int(route_data.get('value'))}
             
             web3_instance = await self.get_web3_with_check()
             tx_func['nonce'] = web3_instance.eth.get_transaction_count(address, 'pending')
@@ -214,37 +209,26 @@ class Faroswap:
             self.log(f"{Fore.RED+Style.BRIGHT}Swap failed: {e}{Style.RESET_ALL}")
             return None, None
             
-    # <<< DIUBAH: Logika diperbaiki untuk memisahkan approval dan transaksi utama
     async def perform_add_dvm_liquidity(self, account: str, address: str, pair_address: str, base_token: str, quote_token: str, amount: float):
         try:
-            in_amount = int(amount * (10 ** 6)) # USDC dan USDT biasanya 6 desimal
+            in_amount = int(amount * (10 ** 6))
             
-            # Langkah 1: Approve kedua token secara berurutan
             approve1_success = await self.approving_token(account, address, self.POOL_ROUTER_ADDRESS, base_token, in_amount)
             if not approve1_success:
-                self.log(f"{Fore.RED}Approval for base token failed. Stopping liquidity add.{Style.RESET_ALL}")
+                self.log(f"{Fore.RED}Approval for base token failed. Stopping.{Style.RESET_ALL}")
                 return None, None
 
             approve2_success = await self.approving_token(account, address, self.POOL_ROUTER_ADDRESS, quote_token, in_amount)
             if not approve2_success:
-                self.log(f"{Fore.RED}Approval for quote token failed. Stopping liquidity add.{Style.RESET_ALL}")
+                self.log(f"{Fore.RED}Approval for quote token failed. Stopping.{Style.RESET_ALL}")
                 return None, None
             
-            self.log(f"{Fore.YELLOW}All approvals successful. Proceeding to add liquidity...{Style.RESET_ALL}")
-            await asyncio.sleep(5) # Beri jeda agar state nonce di node terupdate
+            self.log(f"{Fore.YELLOW}Approvals successful. Adding liquidity...{Style.RESET_ALL}")
+            await asyncio.sleep(5)
 
-            # Langkah 2: Kirim transaksi add liquidity
             web3 = await self.get_web3_with_check()
             contract = web3.eth.contract(address=web3.to_checksum_address(self.DVM_ROUTER_ADDRESS), abi=self.UNISWAP_V2_CONTRACT_ABI)
-            add_lp_func = contract.functions.addDVMLiquidity(
-                web3.to_checksum_address(pair_address), 
-                in_amount, 
-                in_amount, 
-                int(in_amount * 0.99), # Slippage 1%
-                int(in_amount * 0.99), # Slippage 1%
-                0, 
-                int(time.time()) + 600
-            )
+            add_lp_func = contract.functions.addDVMLiquidity(web3.to_checksum_address(pair_address), in_amount, in_amount, int(in_amount * 0.99), int(in_amount * 0.99), 0, int(time.time()) + 600)
             return await self.perform_transaction(add_lp_func, account, address)
         except Exception as e:
             self.log(f"{Fore.RED+Style.BRIGHT}Add Liquidity Failed: {e}{Style.RESET_ALL}")
@@ -314,11 +298,17 @@ class Faroswap:
         else:
             self.log(f"{Fore.YELLOW}Insufficient {swap_details['ticker']} balance.{Style.RESET_ALL}")
 
+    # <<< DIUBAH: Logika perulangan diperbaiki
     async def process_swap(self, account, address):
         self.log(f"{Fore.MAGENTA}Starting Swap Module ({self.swap_count} transactions)...{Style.RESET_ALL}")
         
+        if self.swap_count < 1:
+            self.log(f"{Fore.YELLOW}Swap count is zero, skipping swap module.{Style.RESET_ALL}")
+            print("-" * 72)
+            return
+
         # 1. Fixed Swap: PHRS to WPHRS
-        self.log("Executing Swap 1/2 (Fixed: PHRS -> WPHRS)")
+        self.log(f"Executing Swap 1/{self.swap_count} (Fixed: PHRS -> WPHRS)")
         fixed_swap_details = {
             "swap_option": "PHRS to WPHRS",
             "from_token": self.PHRS_CONTRACT_ADDRESS,
@@ -328,9 +318,9 @@ class Faroswap:
         }
         await self._execute_swap(fixed_swap_details, account, address)
 
-        # 2. Random Swap
-        if self.swap_count > 1:
-            self.log(f"Executing Swap 2/2 (Random)")
+        # 2. Loop untuk swap acak yang tersisa
+        for i in range(1, self.swap_count):
+            self.log(f"Executing Swap {i + 1}/{self.swap_count} (Random)")
             random_swap_details = self.generate_swap_option()
             await self._execute_swap(random_swap_details, account, address)
             
@@ -384,7 +374,6 @@ class Faroswap:
             self.log(f"{Fore.RED+Style.BRIGHT}Invalid Private Key. Please check your .env file.{Style.RESET_ALL}")
             return
 
-        # Menjalankan semua fitur secara otomatis
         if self.dp_or_wd_option == 1: await self.process_deposit(account, address)
         elif self.dp_or_wd_option == 2: await self.process_withdraw(account, address)
         
