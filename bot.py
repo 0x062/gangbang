@@ -47,8 +47,8 @@ class Faroswap:
         self.wphrs_swap_amount = 0.01
         self.usdc_swap_amount = 0.01
         self.usdt_swap_amount = 0.01
-        self.weth_swap_amount = 0.001
-        self.wbtc_swap_amount = 0.0001
+        self.weth_swap_amount = 0.000001
+        self.wbtc_swap_amount = 0.0000001
 
         self.add_lp_count = 5
         self.usdc_add_lp_amount = 0.01
