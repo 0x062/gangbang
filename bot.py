@@ -43,7 +43,7 @@ class Faroswap:
         self.withdraw_amount = 0.01
 
         self.swap_count = 2  # Akan melakukan swap 2x (1x PHRS->WPHRS, 1x acak)
-        self.phrs_swap_amount = 0.2
+        self.phrs_swap_amount = 0.02
         self.wphrs_swap_amount = 0.01
         self.usdc_swap_amount = 1.0
         self.usdt_swap_amount = 1.0
