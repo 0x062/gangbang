@@ -3,15 +3,12 @@ from web3.exceptions import TransactionNotFound
 from eth_account import Account
 from aiohttp import ClientSession, ClientTimeout, ClientResponseError
 from fake_useragent import FakeUserAgent
-from datetime import datetime
 from colorama import *
 from dotenv import load_dotenv
-import asyncio, random, json, time, os, pytz
+import asyncio, random, json, time, os
 
 # Muat variabel dari file .env
 load_dotenv()
-
-wib = pytz.timezone('Asia/Jakarta')
 
 class Faroswap:
     def __init__(self) -> None:
@@ -45,13 +42,13 @@ class Faroswap:
         self.deposit_amount = 0.01
         self.withdraw_amount = 0.01
 
-        self.swap_count = 2  # Akan melakukan swap 2x
-        self.phrs_swap_amount = 0.01
+        self.swap_count = 2  # Akan melakukan swap 2x (1x PHRS->WPHRS, 1x acak)
+        self.phrs_swap_amount = 0.2
         self.wphrs_swap_amount = 0.01
         self.usdc_swap_amount = 1.0
         self.usdt_swap_amount = 1.0
-        self.weth_swap_amount = 0.001
-        self.wbtc_swap_amount = 0.0001
+        self.weth_swap_amount = 0.000001
+        self.wbtc_swap_amount = 0.000001
 
         self.add_lp_count = 2  # Akan menambah likuiditas 2x
         self.usdc_add_lp_amount = 1.0
@@ -61,21 +58,12 @@ class Faroswap:
         self.max_delay = 25  # Detik
         # ============================
 
-    def clear_terminal(self):
-        os.system('cls' if os.name == 'nt' else 'clear')
-
     def log(self, message):
-        print(f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
-              f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}{message}", flush=True)
+        print(f"{Fore.CYAN+Style.BRIGHT}[+]{Style.RESET_ALL} {message}", flush=True)
 
     def welcome(self):
-        print(f"\n{Fore.GREEN+Style.BRIGHT}Faroswap{Fore.BLUE+Style.BRIGHT} Auto BOT (Full-Auto Mode)\n"
+        print(f"\n{Fore.GREEN+Style.BRIGHT}Faroswap{Fore.BLUE+Style.BRIGHT} Auto BOT (Full-Auto, Single Run)\n"
               f"{Fore.GREEN+Style.BRIGHT}Rey? {Fore.YELLOW+Style.BRIGHT}<INI WATERMARK>\n")
-
-    def format_seconds(self, seconds):
-        hours, remainder = divmod(seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
     
     def load_pools(self):
         filename = "pools.json"
@@ -99,7 +87,7 @@ class Faroswap:
         return f"{account[:6]}******{account[-6:]}" if account else None
 
     def generate_swap_option(self):
-        valid_pairs = [(f, t) for f in self.TICKERS for t in self.TICKERS if f != t and not (f in ["PHRS", "WPHRS"] and t in ["PHRS", "WPHRS"])]
+        valid_pairs = [(f, t) for f in self.TICKERS for t in self.TICKERS if f != t and (f,t) != ("PHRS", "WPHRS") and (f,t) != ("WPHRS", "PHRS")]
         from_ticker, to_ticker = random.choice(valid_pairs)
         from_token = getattr(self, f"{from_ticker}_CONTRACT_ADDRESS")
         to_token = getattr(self, f"{to_ticker}_CONTRACT_ADDRESS")
@@ -149,15 +137,7 @@ class Faroswap:
             max_priority_fee = web3.to_wei(1, 'gwei')
             
             estimated_gas = tx_function.estimate_gas({'from': address, 'value': value})
-            tx = tx_function.build_transaction({
-                'from': address,
-                'value': value,
-                'gas': int(estimated_gas * 1.5), # Gas buffer
-                'maxFeePerGas': max_priority_fee,
-                'maxPriorityFeePerGas': max_priority_fee,
-                'nonce': tx_count,
-                'chainId': web3.eth.chain_id
-            })
+            tx = tx_function.build_transaction({'from': address, 'value': value, 'gas': int(estimated_gas * 1.5), 'maxFeePerGas': max_priority_fee, 'maxPriorityFeePerGas': max_priority_fee, 'nonce': tx_count, 'chainId': web3.eth.chain_id})
             
             signed_tx = web3.eth.account.sign_transaction(tx, account)
             tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
@@ -192,8 +172,7 @@ class Faroswap:
                 if tx_hash:
                     self.log_transaction("Approve", tx_hash, block_number)
                     await self.print_timer()
-                else:
-                    raise Exception("Approval failed.")
+                else: raise Exception("Approval failed.")
             return True
         except Exception as e:
             raise Exception(f"Approving token failed: {e}")
@@ -241,8 +220,7 @@ class Faroswap:
     async def print_timer(self):
         delay = random.randint(self.min_delay, self.max_delay)
         for i in range(delay, 0, -1):
-            print(f"{Fore.CYAN+Style.BRIGHT}[ {datetime.now(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}{Fore.WHITE+Style.BRIGHT} | {Style.RESET_ALL}"
-                  f"{Fore.BLUE+Style.BRIGHT}Waiting {i}s for next tx...{Style.RESET_ALL}", end="\r", flush=True)
+            print(f"{Fore.CYAN+Style.BRIGHT}[+]{Style.RESET_ALL} {Fore.BLUE+Style.BRIGHT}Waiting {i}s for next tx...{Style.RESET_ALL}", end="\r", flush=True)
             await asyncio.sleep(1)
         print(" " * 80, end="\r")
 
@@ -264,13 +242,15 @@ class Faroswap:
         return None
     
     def log_transaction(self, action, tx_hash, block_number, final_log=False):
-        status = "Success" if tx_hash else "Failed"
-        color = Fore.GREEN if tx_hash else Fore.RED
-        self.log(f"Status: {color}{action} {status}{Style.RESET_ALL}")
         if tx_hash:
-            explorer = f"{self.EXPLORER_URL}/tx/{tx_hash}"
-            self.log(f"Block: {Fore.WHITE}{block_number}{Style.RESET_ALL}")
-            self.log(f"Explorer: {Fore.WHITE}{explorer}{Style.RESET_ALL}")
+            status, color, icon = "Success", Fore.GREEN, "[✓]"
+            print(f"{color+Style.BRIGHT}{icon}{Style.RESET_ALL} {action} {status}")
+            print(f"{color+Style.BRIGHT}   - Block:{Style.RESET_ALL} {Fore.WHITE}{block_number}{Style.RESET_ALL}")
+            print(f"{color+Style.BRIGHT}   - Explorer:{Style.RESET_ALL} {Fore.WHITE}{self.EXPLORER_URL}/tx/{tx_hash}{Style.RESET_ALL}")
+        else:
+            status, color, icon = "Failed", Fore.RED, "[x]"
+            print(f"{color+Style.BRIGHT}{icon}{Style.RESET_ALL} {action} {status}")
+
         if final_log:
             print("-" * 72)
 
@@ -290,29 +270,52 @@ class Faroswap:
             self.log_transaction("Withdraw", tx_hash, block, True)
         else: self.log(f"{Fore.YELLOW}Insufficient WPHRS balance.{Style.RESET_ALL}")
 
+    async def _execute_swap(self, swap_details, account, address):
+        self.log(f"Option: {swap_details['swap_option']}")
+        balance = await self.get_token_balance(address, swap_details['from_token'])
+        self.log(f"Balance: {balance or 0:.4f} {swap_details['ticker']} | Amount to Swap: {swap_details['amount']} {swap_details['ticker']}")
+        if balance and balance >= swap_details['amount']:
+            tx_hash, block = await self.perform_swap(account, address, **{k:v for k,v in swap_details.items() if k in ['from_token', 'to_token', 'amount']})
+            self.log_transaction("Swap", tx_hash, block)
+            await self.print_timer()
+        else:
+            self.log(f"{Fore.YELLOW}Insufficient {swap_details['ticker']} balance.{Style.RESET_ALL}")
+
     async def process_swap(self, account, address):
         self.log(f"{Fore.MAGENTA}Starting Swap Module ({self.swap_count} transactions)...{Style.RESET_ALL}")
-        for i in range(self.swap_count):
-            self.log(f"Executing Swap {i+1}/{self.swap_count}")
-            swap_details = self.generate_swap_option()
-            self.log(f"Option: {swap_details['swap_option']}")
-            balance = await self.get_token_balance(address, swap_details['from_token'])
-            self.log(f"Balance: {balance or 0:.4f} {swap_details['ticker']} | Amount to Swap: {swap_details['amount']} {swap_details['ticker']}")
-            if balance and balance > swap_details['amount']:
-                tx_hash, block = await self.perform_swap(account, address, **{k:v for k,v in swap_details.items() if k in ['from_token', 'to_token', 'amount']})
-                self.log_transaction("Swap", tx_hash, block)
-                await self.print_timer()
-            else: self.log(f"{Fore.YELLOW}Insufficient {swap_details['ticker']} balance.{Style.RESET_ALL}")
+        
+        # 1. Fixed Swap: PHRS to WPHRS
+        self.log("Executing Swap 1/2 (Fixed: PHRS -> WPHRS)")
+        fixed_swap_details = {
+            "swap_option": "PHRS to WPHRS",
+            "from_token": self.PHRS_CONTRACT_ADDRESS,
+            "to_token": self.WPHRS_CONTRACT_ADDRESS,
+            "ticker": "PHRS",
+            "amount": self.phrs_swap_amount
+        }
+        await self._execute_swap(fixed_swap_details, account, address)
+
+        # 2. Random Swap
+        if self.swap_count > 1:
+            self.log(f"Executing Swap 2/2 (Random)")
+            random_swap_details = self.generate_swap_option()
+            await self._execute_swap(random_swap_details, account, address)
+            
         print("-" * 72)
 
     async def process_add_liquidity(self, account, address):
         self.log(f"{Fore.MAGENTA}Starting Add Liquidity Module ({self.add_lp_count} transactions)...{Style.RESET_ALL}")
-        if not self.pools: self.log(f"{Fore.RED}pools.json not loaded. Skipping liquidity operations.{Style.RESET_ALL}"); return
+        if not self.pools:
+            self.log(f"{Fore.RED}pools.json not loaded. Skipping liquidity operations.{Style.RESET_ALL}")
+            return
+            
         for i in range(self.add_lp_count):
             self.log(f"Executing Add Liquidity {i+1}/{self.add_lp_count}")
             lp_details = self.generate_lp_option()
             pair_addr = self.pools[0].get(f"{lp_details['base_ticker']}_{lp_details['quote_ticker']}")
-            if not pair_addr: self.log(f"{Fore.RED}Pool address for {lp_details['lp_option']} not found.{Style.RESET_ALL}"); continue
+            if not pair_addr:
+                self.log(f"{Fore.RED}Pool address for {lp_details['lp_option']} not found.{Style.RESET_ALL}")
+                continue
             
             self.log(f"Option: {lp_details['lp_option']}")
             base_bal = await self.get_token_balance(address, lp_details['base_token'])
@@ -323,7 +326,8 @@ class Faroswap:
                 tx_hash, block = await self.perform_add_dvm_liquidity(account, address, pair_addr, **{k:v for k,v in lp_details.items() if k in ['base_token', 'quote_token', 'amount']})
                 self.log_transaction("Add Liquidity", tx_hash, block)
                 await self.print_timer()
-            else: self.log(f"{Fore.YELLOW}Insufficient token balance for liquidity.{Style.RESET_ALL}")
+            else:
+                self.log(f"{Fore.YELLOW}Insufficient token balance for liquidity.{Style.RESET_ALL}")
         print("-" * 72)
 
     async def main(self):
@@ -332,35 +336,30 @@ class Faroswap:
             self.log(f"{Fore.RED+Style.BRIGHT}Error: PRIVATE_KEY not found or is empty in .env file.{Style.RESET_ALL}")
             return
 
-        self.pools = self.load_pools()
+        os.system('cls' if os.name == 'nt' else 'clear')
+        self.welcome()
         
-        while True:
-            self.clear_terminal()
-            self.welcome()
-            address = self.generate_address(account)
-            
-            separator = "=" * 25
-            self.log(f"{Fore.CYAN+Style.BRIGHT}{separator}[{Style.RESET_ALL}"
-                     f"{Fore.WHITE+Style.BRIGHT} {self.mask_account(address)} {Style.RESET_ALL}"
-                     f"{Fore.CYAN+Style.BRIGHT}]{separator}{Style.RESET_ALL}")
+        self.pools = self.load_pools()
+        address = self.generate_address(account)
+        
+        separator = "=" * 25
+        self.log(f"{Fore.CYAN+Style.BRIGHT}{separator}[{Style.RESET_ALL}"
+                 f"{Fore.WHITE+Style.BRIGHT} {self.mask_account(address)} {Style.RESET_ALL}"
+                 f"{Fore.CYAN+Style.BRIGHT}]{separator}{Style.RESET_ALL}")
 
-            if not address:
-                self.log(f"{Fore.RED+Style.BRIGHT}Invalid Private Key. Please check your .env file.{Style.RESET_ALL}")
-                return
+        if not address:
+            self.log(f"{Fore.RED+Style.BRIGHT}Invalid Private Key. Please check your .env file.{Style.RESET_ALL}")
+            return
 
-            # Menjalankan semua fitur secara otomatis
-            if self.dp_or_wd_option == 1: await self.process_deposit(account, address)
-            elif self.dp_or_wd_option == 2: await self.process_withdraw(account, address)
-            await self.process_swap(account, address)
-            await self.process_add_liquidity(account, address)
-            
-            self.log(f"{Fore.GREEN+Style.BRIGHT}Cycle completed. Waiting for 24 hours...{Style.RESET_ALL}")
-            self.log(f"{Fore.CYAN+Style.BRIGHT}={Style.RESET_ALL}"*72)
-            
-            seconds = 24 * 60 * 60
-            for i in range(seconds, 0, -1):
-                print(f"{Fore.CYAN+Style.BRIGHT}[ Next cycle in {self.format_seconds(i)}... ]{Style.RESET_ALL}", end="\r")
-                await asyncio.sleep(1)
+        # Menjalankan semua fitur secara otomatis
+        if self.dp_or_wd_option == 1: await self.process_deposit(account, address)
+        elif self.dp_or_wd_option == 2: await self.process_withdraw(account, address)
+        
+        await self.process_swap(account, address)
+        await self.process_add_liquidity(account, address)
+        
+        self.log(f"{Fore.GREEN+Style.BRIGHT}Cycle completed. The script will now exit.{Style.RESET_ALL}")
+        self.log(f"{Fore.CYAN+Style.BRIGHT}={Style.RESET_ALL}"*72)
 
 if __name__ == "__main__":
     try:
