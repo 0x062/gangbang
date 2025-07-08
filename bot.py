@@ -42,17 +42,17 @@ class Faroswap:
         self.deposit_amount = 0.01
         self.withdraw_amount = 0.01
 
-        self.swap_count = 6  # Akan melakukan swap 2x (1x PHRS->WPHRS, 1x acak)
-        self.phrs_swap_amount = 0.02
+        self.swap_count = 5  # Akan melakukan swap 2x (1x PHRS->WPHRS, 1x acak)
+        self.phrs_swap_amount = 0.01
         self.wphrs_swap_amount = 0.01
         self.usdc_swap_amount = 0.1
         self.usdt_swap_amount = 0.1
-        self.weth_swap_amount = 0.000001
-        self.wbtc_swap_amount = 0.000001
+        self.weth_swap_amount = 0.001
+        self.wbtc_swap_amount = 0.0001
 
-        self.add_lp_count = 2  # Akan menambah likuiditas 2x
-        self.usdc_add_lp_amount = 0.1
-        self.usdt_add_lp_amount = 0.1
+        self.add_lp_count = 5  # Akan menambah likuiditas 2x
+        self.usdc_add_lp_amount = 0.1 # Jumlah kecil untuk testing
+        self.usdt_add_lp_amount = 0.1 # Jumlah kecil untuk testing
         
         self.min_delay = 10  # Detik
         self.max_delay = 25  # Detik
@@ -172,10 +172,13 @@ class Faroswap:
                 if tx_hash:
                     self.log_transaction("Approve", tx_hash, block_number)
                     await self.print_timer()
-                else: raise Exception("Approval failed.")
-            return True
+                    return True # Return success
+                else:
+                    raise Exception("Approval transaction failed to get hash.")
+            return True # Already approved or approval succeeded
         except Exception as e:
-            raise Exception(f"Approving token failed: {e}")
+            self.log(f"{Fore.RED+Style.BRIGHT}Approving token failed: {e}{Style.RESET_ALL}")
+            return False # Return failure
 
     async def perform_swap(self, account: str, address: str, from_token: str, to_token: str, amount: float):
         try:
@@ -184,18 +187,26 @@ class Faroswap:
             amount_to_wei = int(amount * (10 ** decimals))
             
             if from_token != self.PHRS_CONTRACT_ADDRESS:
-                await self.approving_token(account, address, self.MIXSWAP_ROUTER_ADDRESS, from_token, amount_to_wei)
+                if not await self.approving_token(account, address, self.MIXSWAP_ROUTER_ADDRESS, from_token, amount_to_wei):
+                    return None, None # Stop if approval fails
             
             dodo_route = await self.get_dodo_route(address, from_token, to_token, amount_to_wei)
             if not dodo_route or "data" not in dodo_route: return None, None
             
             route_data = dodo_route["data"]
-            tx = {'to': self.MIXSWAP_ROUTER_ADDRESS, 'from': address, 'data': route_data.get('data'), 'value': int(route_data.get('value'))}
+            tx_func = {
+                'to': self.MIXSWAP_ROUTER_ADDRESS,
+                'from': address,
+                'data': route_data.get('data'),
+                'value': int(route_data.get('value'))
+            }
             
-            estimated_gas = await asyncio.to_thread(web3.eth.estimate_gas, tx)
-            tx.update({'gas': int(estimated_gas * 1.5), 'maxFeePerGas': web3.to_wei(1, 'gwei'), 'maxPriorityFeePerGas': web3.to_wei(1, 'gwei'), 'nonce': web3.eth.get_transaction_count(address, 'pending'), 'chainId': web3.eth.chain_id})
+            web3_instance = await self.get_web3_with_check()
+            tx_func['nonce'] = web3_instance.eth.get_transaction_count(address, 'pending')
+            tx_func['gas'] = await asyncio.to_thread(web3_instance.eth.estimate_gas, tx_func)
+            tx_func.update({'maxFeePerGas': web3.to_wei(1, 'gwei'), 'maxPriorityFeePerGas': web3.to_wei(1, 'gwei'), 'chainId': web3.eth.chain_id})
             
-            signed_tx = web3.eth.account.sign_transaction(tx, account)
+            signed_tx = web3.eth.account.sign_transaction(tx_func, account)
             tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
             receipt = await self.wait_for_receipt(web3, tx_hash)
             return web3.to_hex(tx_hash), receipt.blockNumber
@@ -203,15 +214,37 @@ class Faroswap:
             self.log(f"{Fore.RED+Style.BRIGHT}Swap failed: {e}{Style.RESET_ALL}")
             return None, None
             
+    # <<< DIUBAH: Logika diperbaiki untuk memisahkan approval dan transaksi utama
     async def perform_add_dvm_liquidity(self, account: str, address: str, pair_address: str, base_token: str, quote_token: str, amount: float):
         try:
-            in_amount = int(amount * (10 ** 6))
-            await self.approving_token(account, address, self.POOL_ROUTER_ADDRESS, base_token, in_amount)
-            await self.approving_token(account, address, self.POOL_ROUTER_ADDRESS, quote_token, in_amount)
+            in_amount = int(amount * (10 ** 6)) # USDC dan USDT biasanya 6 desimal
             
+            # Langkah 1: Approve kedua token secara berurutan
+            approve1_success = await self.approving_token(account, address, self.POOL_ROUTER_ADDRESS, base_token, in_amount)
+            if not approve1_success:
+                self.log(f"{Fore.RED}Approval for base token failed. Stopping liquidity add.{Style.RESET_ALL}")
+                return None, None
+
+            approve2_success = await self.approving_token(account, address, self.POOL_ROUTER_ADDRESS, quote_token, in_amount)
+            if not approve2_success:
+                self.log(f"{Fore.RED}Approval for quote token failed. Stopping liquidity add.{Style.RESET_ALL}")
+                return None, None
+            
+            self.log(f"{Fore.YELLOW}All approvals successful. Proceeding to add liquidity...{Style.RESET_ALL}")
+            await asyncio.sleep(5) # Beri jeda agar state nonce di node terupdate
+
+            # Langkah 2: Kirim transaksi add liquidity
             web3 = await self.get_web3_with_check()
             contract = web3.eth.contract(address=web3.to_checksum_address(self.DVM_ROUTER_ADDRESS), abi=self.UNISWAP_V2_CONTRACT_ABI)
-            add_lp_func = contract.functions.addDVMLiquidity(web3.to_checksum_address(pair_address), in_amount, in_amount, int(in_amount * 0.999), int(in_amount * 0.999), 0, int(time.time()) + 600)
+            add_lp_func = contract.functions.addDVMLiquidity(
+                web3.to_checksum_address(pair_address), 
+                in_amount, 
+                in_amount, 
+                int(in_amount * 0.99), # Slippage 1%
+                int(in_amount * 0.99), # Slippage 1%
+                0, 
+                int(time.time()) + 600
+            )
             return await self.perform_transaction(add_lp_func, account, address)
         except Exception as e:
             self.log(f"{Fore.RED+Style.BRIGHT}Add Liquidity Failed: {e}{Style.RESET_ALL}")
