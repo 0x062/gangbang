@@ -42,7 +42,7 @@ class Faroswap:
         self.deposit_amount = 0.01
         self.withdraw_amount = 0.01
 
-        self.swap_count = 5  # << ANDA BISA UBAH NILAI INI
+        self.swap_count = 15  # << ANDA BISA UBAH NILAI INI
         self.phrs_swap_amount = 0.01
         self.wphrs_swap_amount = 0.01
         self.usdc_swap_amount = 0.01
